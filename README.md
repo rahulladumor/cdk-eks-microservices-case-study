@@ -54,39 +54,100 @@ Production-ready **Kubernetes microservices** using AWS CDK TypeScript with:
 
 ## 🏗️ Architecture
 
+### High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph External
+        Users[Users/Clients]
+        Mobile[Mobile Apps]
+        Web[Web Apps]
+    end
+    
+    subgraph API Layer
+        APIGW[API Gateway<br/>HTTP API<br/>JWT Authorization]
+        Lambda[Lambda Authorizer<br/>Token Validation]
+    end
+    
+    subgraph EKS Cluster - Fargate
+        subgraph App Mesh Service Mesh
+            subgraph API Gateway Service
+                API[API Gateway Service<br/>Node.js<br/>Port 3000]
+                APIEnvoy[Envoy Proxy<br/>Sidecar]
+            end
+            
+            subgraph Auth Service
+                Auth[Auth Service<br/>Go<br/>Port 8080]
+                AuthEnvoy[Envoy Proxy<br/>Sidecar]
+            end
+            
+            subgraph Users Service
+                UsersSvc[Users Service<br/>Python<br/>Port 5000]
+                UsersEnvoy[Envoy Proxy<br/>Sidecar]
+            end
+            
+            subgraph Orders Service
+                OrdersSvc[Orders Service<br/>Java<br/>Port 8081]
+                OrdersEnvoy[Envoy Proxy<br/>Sidecar]
+            end
+            
+            subgraph Notifications Service
+                NotifSvc[Notifications Service<br/>Node.js<br/>Port 3001]
+                NotifEnvoy[Envoy Proxy<br/>Sidecar]
+            end
+        end
+    end
+    
+    subgraph Data Layer
+        Aurora[Aurora Serverless v2<br/>PostgreSQL<br/>Auto-scaling]
+        Redis[ElastiCache Redis<br/>Session Cache]
+        DDB[DynamoDB<br/>Orders Table<br/>Streams Enabled]
+    end
+    
+    subgraph Monitoring
+        XRay[X-Ray<br/>Distributed Tracing]
+        CW[CloudWatch<br/>Container Insights<br/>Logs & Metrics]
+    end
+    
+    Users --> APIGW
+    Mobile --> APIGW
+    Web --> APIGW
+    
+    APIGW -->|Authenticate| Lambda
+    Lambda -->|Valid| API
+    
+    API --> APIEnvoy
+    APIEnvoy -->|Service Discovery| Auth
+    APIEnvoy -->|Service Discovery| UsersSvc
+    APIEnvoy -->|Service Discovery| OrdersSvc
+    
+    Auth --> AuthEnvoy
+    UsersSvc --> UsersEnvoy
+    OrdersSvc --> OrdersEnvoy
+    NotifSvc --> NotifEnvoy
+    
+    Auth --> Aurora
+    UsersSvc --> Aurora
+    OrdersSvc --> DDB
+    
+    Auth --> Redis
+    API --> Redis
+    
+    DDB -->|Stream| NotifSvc
+    
+    API --> XRay
+    Auth --> XRay
+    UsersSvc --> XRay
+    OrdersSvc --> XRay
+    NotifSvc --> XRay
+    
+    API --> CW
+    Auth --> CW
+    UsersSvc --> CW
+    OrdersSvc --> CW
+    NotifSvc --> CW
 ```
-Internet
-   ↓
-CloudFront + WAF
-   ↓
-API Gateway HTTP API
-   ↓
-Lambda Authorizer (Cognito)
-   ↓
-┌─────────────────────────────────────────────────┐
-│              EKS Fargate Cluster                 │
-│            (App Mesh Enabled)                    │
-├─────────────────────────────────────────────────┤
-│                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │   API    │→ │   Auth   │→ │  Users   │     │
-│  │ Gateway  │  │ Service  │  │ Service  │     │
-│  │ Service  │  │          │  │          │     │
-│  └────┬─────┘  └──────────┘  └────┬─────┘     │
-│       │                            │            │
-│       ↓                            ↓            │
-│  ┌──────────┐              ┌──────────┐        │
-│  │ Orders   │←─────────────│   Notif  │        │
-│  │ Service  │              │ Service  │        │
-│  └────┬─────┘              └────┬─────┘        │
-│       │                         │               │
-└───────┼─────────────────────────┼───────────────┘
-        ↓                         ↓
-   DynamoDB                      SNS/SQS
-   Streams                       EventBridge
-        ↓                         ↓
-   Aurora Serverless v2      ElastiCache Redis
-```
+
 
 ## 🚀 Quick Deploy
 
